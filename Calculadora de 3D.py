@@ -1,223 +1,134 @@
-import tkinter as tk
-from tkinter import messagebox, ttk
+import customtkinter as ctk
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
+# --- Configuración Visual de la Ventana ---
+ctk.set_appearance_mode("dark")  # Modo oscuro profesional
+ctk.set_default_color_theme("blue")
 
-PESO_TOTAL_BOBINA_G = 1000.0
-CONSUMO_WATTS = 350.0
-COSTO_REPUESTO_USD = 20.0
-VIDA_UTIL_REPUESTO_H = 500.0
-
-
-def parsear_numero(valor_texto):
-    """Acepta punto o coma decimal y devuelve float."""
-    valor_limpio = valor_texto.strip().replace(",", ".")
-    if not valor_limpio:
-        raise ValueError("Campo vacio")
-    return float(valor_limpio)
-
-
-class Studio3MFCalculadora(tk.Tk):
+class Studio3MFApp(ctk.CTk):
     def __init__(self):
         super().__init__()
-        self.title("Studio3MF calculadora")
-        self.geometry("760x560")
-        self.minsize(720, 520)
-        self.configure(bg="#f3f5f7")
 
-        self._crear_ui()
+        self.title("Studio3MF Calculadora 3D - Nivel Profesional")
+        self.geometry("950x650")
+        self.minsize(900, 600)
 
-    def _crear_ui(self):
-        marco = tk.Frame(self, bg="#f3f5f7", padx=18, pady=16)
-        marco.pack(fill="both", expand=True)
+        # Configuración de la cuadrícula principal (2 columnas)
+        self.grid_columnconfigure(0, weight=1)
+        self.grid_columnconfigure(1, weight=1)
+        self.grid_rowconfigure(0, weight=1)
 
-        titulo = tk.Label(
-            marco,
-            text="Studio3MF calculadora",
-            font=("Segoe UI", 18, "bold"),
-            bg="#f3f5f7",
-            fg="#1f2937",
-        )
-        titulo.grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, 8))
+        # ================= PANEL IZQUIERDO (Entradas) =================
+        self.frame_inputs = ctk.CTkFrame(self)
+        self.frame_inputs.grid(row=0, column=0, padx=20, pady=20, sticky="nsew")
+        self.frame_inputs.grid_columnconfigure(1, weight=1)
 
-        subtitulo = tk.Label(
-            marco,
-            text="Calculadora de costos para impresiones 3D",
-            font=("Segoe UI", 10),
-            bg="#f3f5f7",
-            fg="#4b5563",
-        )
-        subtitulo.grid(row=1, column=0, columnspan=3, sticky="w", pady=(0, 16))
+        ctk.CTkLabel(self.frame_inputs, text="Parámetros del Proyecto", font=ctk.CTkFont(size=20, weight="bold")).grid(row=0, column=0, columnspan=2, pady=(15, 20))
 
+        # Diccionario para guardar los inputs
         self.entradas = {}
-
+        
+        # Lista de campos: (Etiqueta, Valor por defecto)
         campos = [
-            ("Precio de filamento (bobina 1kg) en USD", "precio_bobina", "20"),
-            ("Peso de la pieza a imprimir (g)", "peso_pieza", "100"),
-            ("Tiempo total de impresion (h)", "tiempo_horas", "4"),
-            ("Tarifa electrica local (USD/kWh)", "tarifa_electrica", "0.12"),
+            ("Precio Filamento (1kg) [$]:", "25.0"),
+            ("Peso de la pieza [g]:", "462.0"),
+            ("Margen de Fallo/Soportes [%]:", "5.0"),
+            ("Tiempo de Impresión [h]:", "33.3"),
+            ("Tarifa Eléctrica [$/kWh]:", "0.50"),
+            ("Consumo Máquina [kW]:", "0.35"),
+            ("Desgaste/Amortización [$/h]:", "0.14"),
+            ("Horas Manuales (Limpieza/Corte) [h]:", "2.0"),
+            ("Tu Tarifa por Hora [$/h]:", "10.0"),
+            ("Multiplicador de Ganancia [x]:", "3.5")
         ]
 
-        fila_base = 2
-        for i, (etiqueta, clave, valor_defecto) in enumerate(campos):
-            tk.Label(
-                marco,
-                text=etiqueta,
-                font=("Segoe UI", 10),
-                bg="#f3f5f7",
-                fg="#111827",
-            ).grid(row=fila_base + i, column=0, sticky="w", pady=5)
+        for i, (texto, valor_defecto) in enumerate(campos):
+            ctk.CTkLabel(self.frame_inputs, text=texto, font=ctk.CTkFont(size=13)).grid(row=i+1, column=0, padx=15, pady=8, sticky="w")
+            entry = ctk.CTkEntry(self.frame_inputs, width=100)
+            entry.insert(0, valor_defecto)
+            entry.grid(row=i+1, column=1, padx=15, pady=8, sticky="e")
+            self.entradas[texto] = entry
 
-            entrada = tk.Entry(marco, font=("Segoe UI", 10), width=24)
-            entrada.insert(0, valor_defecto)
-            entrada.grid(row=fila_base + i, column=1, sticky="w", pady=5, padx=(8, 0))
-            self.entradas[clave] = entrada
+        # Botón Calcular
+        self.btn_calcular = ctk.CTkButton(self.frame_inputs, text="CALCULAR PRECIO", command=self.calcular_precio, font=ctk.CTkFont(size=15, weight="bold"), height=40)
+        self.btn_calcular.grid(row=len(campos)+1, column=0, columnspan=2, pady=25)
 
-        fila_multiplicador = fila_base + len(campos)
-        tk.Label(
-            marco,
-            text="Ganancia por multiplicador (x2 minimo)",
-            font=("Segoe UI", 10),
-            bg="#f3f5f7",
-            fg="#111827",
-        ).grid(row=fila_multiplicador, column=0, sticky="w", pady=5)
+        # ================= PANEL DERECHO (Resultados y Gráfica) =================
+        self.frame_results = ctk.CTkFrame(self)
+        self.frame_results.grid(row=0, column=1, padx=20, pady=20, sticky="nsew")
 
-        self.multiplicador_var = tk.StringVar(value="2")
-        self.multiplicador_selector = ttk.Combobox(
-            marco,
-            textvariable=self.multiplicador_var,
-            values=["2", "3", "4", "5", "6", "7", "8", "10"],
-            width=22,
-        )
-        self.multiplicador_selector.grid(row=fila_multiplicador, column=1, sticky="w", pady=5, padx=(8, 0))
-        self.multiplicador_selector.set("2")
+        ctk.CTkLabel(self.frame_results, text="Desglose Financiero", font=ctk.CTkFont(size=20, weight="bold")).pack(pady=(15, 10))
 
-        tk.Label(
-            marco,
-            text=(
-                "Valores fijos: bobina total 1000 g | consumo 350 W "
-                "| repuesto 20 USD | vida util 500 h"
-            ),
-            font=("Segoe UI", 9, "italic"),
-            bg="#f3f5f7",
-            fg="#6b7280",
-        ).grid(row=fila_multiplicador + 1, column=0, columnspan=3, sticky="w", pady=(10, 12))
+        # Labels para resultados
+        self.lbl_costo_base = ctk.CTkLabel(self.frame_results, text="Costo Base: $0.00", font=ctk.CTkFont(size=15))
+        self.lbl_costo_base.pack(pady=5)
+        
+        self.lbl_mano_obra = ctk.CTkLabel(self.frame_results, text="Mano de Obra: $0.00", font=ctk.CTkFont(size=15))
+        self.lbl_mano_obra.pack(pady=5)
 
-        botones = tk.Frame(marco, bg="#f3f5f7")
-        botones.grid(row=fila_multiplicador + 2, column=0, columnspan=3, sticky="w")
+        self.lbl_precio_final = ctk.CTkLabel(self.frame_results, text="PRECIO SUGERIDO: $0.00", font=ctk.CTkFont(size=22, weight="bold"), text_color="#2FA572")
+        self.lbl_precio_final.pack(pady=15)
 
-        tk.Button(
-            botones,
-            text="Calcular",
-            font=("Segoe UI", 10, "bold"),
-            bg="#0b5ed7",
-            fg="white",
-            padx=14,
-            pady=6,
-            command=self.calcular,
-            relief="flat",
-        ).pack(side="left", padx=(0, 8))
+        # Área para la gráfica de Matplotlib
+        self.fig, self.ax = plt.subplots(figsize=(5, 4), facecolor='#2b2b2b')
+        self.canvas = FigureCanvasTkAgg(self.fig, master=self.frame_results)
+        self.canvas.get_tk_widget().pack(fill="both", expand=True, padx=10, pady=10)
+        
+        # Dibujar gráfica vacía al inicio
+        self.ax.axis('off')
+        self.fig.tight_layout()
 
-        tk.Button(
-            botones,
-            text="Limpiar",
-            font=("Segoe UI", 10),
-            bg="#e5e7eb",
-            fg="#111827",
-            padx=12,
-            pady=6,
-            command=self.limpiar_resultado,
-            relief="flat",
-        ).pack(side="left")
-
-        self.resultado = tk.Text(
-            marco,
-            height=14,
-            width=82,
-            font=("Consolas", 10),
-            bg="white",
-            fg="#111827",
-            relief="solid",
-            bd=1,
-        )
-        self.resultado.grid(
-            row=fila_multiplicador + 3,
-            column=0,
-            columnspan=3,
-            sticky="nsew",
-            pady=(12, 0),
-        )
-        self.resultado.insert(
-            "1.0",
-            "Ingresa tus datos y presiona 'Calcular' para obtener el costo de impresion.",
-        )
-        self.resultado.config(state="disabled")
-
-        marco.columnconfigure(2, weight=1)
-        marco.rowconfigure(fila_multiplicador + 3, weight=1)
-
-    def limpiar_resultado(self):
-        self._actualizar_resultado("Resultado limpiado. Ingresa valores y vuelve a calcular.")
-
-    def _actualizar_resultado(self, texto):
-        self.resultado.config(state="normal")
-        self.resultado.delete("1.0", tk.END)
-        self.resultado.insert("1.0", texto)
-        self.resultado.config(state="disabled")
-
-    def calcular(self):
+    def calcular_precio(self):
         try:
-            precio_bobina = parsear_numero(self.entradas["precio_bobina"].get())
-            peso_pieza = parsear_numero(self.entradas["peso_pieza"].get())
-            tiempo_horas = parsear_numero(self.entradas["tiempo_horas"].get())
-            tarifa_electrica = parsear_numero(self.entradas["tarifa_electrica"].get())
-            multiplicador = parsear_numero(self.multiplicador_var.get())
+            # 1. Obtener valores de los inputs
+            p_filamento = float(self.entradas["Precio Filamento (1kg) [$]:"].get())
+            peso = float(self.entradas["Peso de la pieza [g]:"].get())
+            fallo = float(self.entradas["Margen de Fallo/Soportes [%]:"].get()) / 100
+            tiempo = float(self.entradas["Tiempo de Impresión [h]:"].get())
+            tarifa_luz = float(self.entradas["Tarifa Eléctrica [$/kWh]:"].get())
+            consumo_kw = float(self.entradas["Consumo Máquina [kW]:"].get())
+            desgaste_h = float(self.entradas["Desgaste/Amortización [$/h]:"].get())
+            h_manuales = float(self.entradas["Horas Manuales (Limpieza/Corte) [h]:"].get())
+            tarifa_h = float(self.entradas["Tu Tarifa por Hora [$/h]:"].get())
+            multiplicador = float(self.entradas["Multiplicador de Ganancia [x]:"].get())
 
-            if any(v < 0 for v in [precio_bobina, peso_pieza, tiempo_horas, tarifa_electrica]):
-                raise ValueError("No se permiten valores negativos")
-            if multiplicador < 2:
-                raise ValueError("El multiplicador minimo es x2")
+            # 2. Cálculos Matemáticos (Modelo Híbrido)
+            costo_material = (p_filamento / 1000) * peso * (1 + fallo)
+            costo_electricidad = tiempo * consumo_kw * tarifa_luz
+            costo_desgaste = tiempo * desgaste_h
+            costo_operativo = costo_electricidad + costo_desgaste
+            
+            costo_base_fisico = costo_material + costo_operativo
+            costo_mano_obra = h_manuales * tarifa_h
+            
+            precio_final = (costo_base_fisico * multiplicador) + costo_mano_obra
+            ganancia_neta = precio_final - (costo_base_fisico + costo_mano_obra)
 
-            costo_material = (precio_bobina / PESO_TOTAL_BOBINA_G) * peso_pieza
-            costo_filamento_gramo = precio_bobina / PESO_TOTAL_BOBINA_G
-            consumo_kw = CONSUMO_WATTS / 1000.0
-            costo_electrico = consumo_kw * tiempo_horas * tarifa_electrica
-            costo_repuesto_hora = COSTO_REPUESTO_USD / VIDA_UTIL_REPUESTO_H
-            costo_desgaste = costo_repuesto_hora * tiempo_horas
+            # 3. Actualizar Textos
+            self.lbl_costo_base.configure(text=f"Costo Físico (Mat + Máq): ${costo_base_fisico:.2f}")
+            self.lbl_mano_obra.configure(text=f"Mano de Obra (Tus Horas): ${costo_mano_obra:.2f}")
+            self.lbl_precio_final.configure(text=f"PRECIO SUGERIDO: ${precio_final:.2f} USD")
 
-            costo_base = costo_material + costo_electrico + costo_desgaste
-            precio_final = costo_base * multiplicador
-            ganancia = precio_final - costo_base
-
-            lineas = [
-                "DESGLOSE DE COSTOS - Studio3MF",
-                "=" * 44,
-                f"Precio filamento bobina:     ${precio_bobina:,.2f} USD",
-                f"Costo filamento por gramo:   ${costo_filamento_gramo:,.4f} USD",
-                f"Costo material (pieza):      ${costo_material:,.2f} USD",
-                f"Costo electricidad:          ${costo_electrico:,.2f} USD",
-                f"Desgaste repuesto:           ${costo_desgaste:,.2f} USD",
-                "-" * 44,
-                f"COSTO BASE:                  ${costo_base:,.2f} USD",
-                f"Multiplicador aplicado:      x{multiplicador:.2f}",
-                f"Ganancia estimada:           ${ganancia:,.2f} USD",
-                "=" * 44,
-                f"PRECIO FINAL SUGERIDO:       ${precio_final:,.2f} USD",
-            ]
-            salida = "\n".join(lineas)
-
-            self._actualizar_resultado(salida)
+            # 4. Actualizar Gráfica
+            self.ax.clear()
+            etiquetas = ['Material', 'Operativo', 'Tu Tiempo', 'Ganancia Neta']
+            valores = [costo_material, costo_operativo, costo_mano_obra, ganancia_neta]
+            colores = ['#FF9999', '#66B2FF', '#99FF99', '#FFCC99']
+            
+            # Formato del texto en pastel (texto blanco)
+            textprops = {"color": "white", "weight": "bold"}
+            
+            self.ax.pie(valores, labels=etiquetas, autopct='%1.1f%%', startangle=140, colors=colores, textprops=textprops)
+            self.ax.set_title("Distribución del Precio Final", color="white", pad=10)
+            self.fig.patch.set_facecolor('#2b2b2b') # Fondo oscuro
+            self.fig.tight_layout()
+            
+            self.canvas.draw()
 
         except ValueError:
-            messagebox.showerror(
-                "Dato invalido",
-                "Revisa los campos: solo se permiten numeros positivos.\n"
-                "El multiplicador de ganancia debe ser x2 o mayor.\n"
-                "Puedes usar punto o coma decimal.",
-            )
-
+            self.lbl_precio_final.configure(text="Error: Revisa los números", text_color="red")
 
 if __name__ == "__main__":
-    app = Studio3MFCalculadora()
+    app = Studio3MFApp()
     app.mainloop()
-
-        
