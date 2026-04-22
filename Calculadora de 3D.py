@@ -32,9 +32,9 @@ class Studio3MFApp(ctk.CTk):
         # Lista de campos: (Etiqueta, Valor por defecto)
         campos = [
             ("Precio Filamento (1kg) [$]:", "25.0"),
-            ("Peso de la pieza [g]:", "462.0"),
+            ("Peso de la pieza [g]:", "0.0"),
             ("Margen de Fallo/Soportes [%]:", "5.0"),
-            ("Tiempo de Impresión [h]:", "33.3"),
+            ("Tiempo de Impresión [h]:", "0.0"),
             ("Tarifa Eléctrica [$/kWh]:", "0.50"),
             ("Consumo Máquina [kW]:", "0.35"),
             ("Desgaste/Amortización [$/h]:", "0.14"),
@@ -60,6 +60,17 @@ class Studio3MFApp(ctk.CTk):
 
         ctk.CTkLabel(self.frame_results, text="Desglose Financiero", font=ctk.CTkFont(size=20, weight="bold")).pack(pady=(15, 10))
 
+        # Modo para mostrar solo el precio al cliente
+        self.modo_cliente_var = ctk.BooleanVar(value=False)
+        self.switch_modo_cliente = ctk.CTkSwitch(
+            self.frame_results,
+            text="Modo Cliente (solo precio)",
+            variable=self.modo_cliente_var,
+            command=self.actualizar_vista_cliente,
+            font=ctk.CTkFont(size=13)
+        )
+        self.switch_modo_cliente.pack(pady=(0, 10))
+
         # Labels para resultados
         self.lbl_costo_base = ctk.CTkLabel(self.frame_results, text="Costo Base: $0.00", font=ctk.CTkFont(size=15))
         self.lbl_costo_base.pack(pady=5)
@@ -67,17 +78,35 @@ class Studio3MFApp(ctk.CTk):
         self.lbl_mano_obra = ctk.CTkLabel(self.frame_results, text="Mano de Obra: $0.00", font=ctk.CTkFont(size=15))
         self.lbl_mano_obra.pack(pady=5)
 
-        self.lbl_precio_final = ctk.CTkLabel(self.frame_results, text="PRECIO SUGERIDO: $0.00", font=ctk.CTkFont(size=22, weight="bold"), text_color="#2FA572")
-        self.lbl_precio_final.pack(pady=15)
-
         # Área para la gráfica de Matplotlib
         self.fig, self.ax = plt.subplots(figsize=(5, 4), facecolor='#2b2b2b')
         self.canvas = FigureCanvasTkAgg(self.fig, master=self.frame_results)
         self.canvas.get_tk_widget().pack(fill="both", expand=True, padx=10, pady=10)
+
+        # Precio sugerido al final: queda debajo de estadísticas/gráfica
+        self.lbl_precio_final = ctk.CTkLabel(self.frame_results, text="PRECIO SUGERIDO: $0.00", font=ctk.CTkFont(size=22, weight="bold"), text_color="#2FA572")
+        self.lbl_precio_final.pack(pady=(0, 15))
         
         # Dibujar gráfica vacía al inicio
         self.ax.axis('off')
         self.fig.tight_layout()
+
+    def actualizar_vista_cliente(self):
+        solo_precio = self.modo_cliente_var.get()
+        if solo_precio:
+            self.lbl_costo_base.pack_forget()
+            self.lbl_mano_obra.pack_forget()
+            self.canvas.get_tk_widget().pack_forget()
+            self.lbl_precio_final.configure(font=ctk.CTkFont(size=30, weight="bold"))
+        else:
+            self.lbl_costo_base.pack(pady=5)
+            self.lbl_mano_obra.pack(pady=5)
+            self.canvas.get_tk_widget().pack(fill="both", expand=True, padx=10, pady=10)
+            self.lbl_precio_final.configure(font=ctk.CTkFont(size=22, weight="bold"))
+
+        # Mantener el precio al final del panel en ambos modos
+        self.lbl_precio_final.pack_forget()
+        self.lbl_precio_final.pack(pady=(0, 15))
 
     def calcular_precio(self):
         try:
